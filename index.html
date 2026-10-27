@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cena 3D – Three.js</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="carregando">Carregando modelos… <span id="progresso">0%</span></div>
+
+    <div id="avisos" aria-live="polite"></div>
+
+    <aside id="painel">
+      <h1>Cena 3D</h1>
+      <h2>Membros</h2>
+      <ul id="lista-membros"></ul>
+      <button id="reiniciar-luta" type="button">Reiniciar luta</button>
+
+      <h2>Selecionado <small id="nome-selecionado"></small></h2>
+      <label class="linha">
+        Modelo
+        <select id="seletor-modelo"></select>
+      </label>
+      <p id="teclas-selecionado" class="ajuda"></p>
+
+      <h2>Animações</h2>
+      <div id="lista-animacoes"></div>
+
+      <label class="linha">
+        Velocidade da animação
+        <input id="velocidade-anim" type="range" min="0" max="2" step="0.1" value="1" />
+      </label>
+
+      <p class="ajuda">
+        Clique num personagem para selecionar.<br />
+        <kbd>1</kbd>–<kbd>9</kbd> tocam as animações do selecionado.<br />
+        O ataque acerta quem estiver na frente e perto; quem perde toda a vida
+        renasce em 4 s.<br />
+        Arraste para girar a câmera, roda do mouse para zoom.
+      </p>
+      <p id="erros"></p>
+    </aside>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
