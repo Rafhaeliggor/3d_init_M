@@ -3,44 +3,78 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Cena 3D – Three.js</title>
+    <title>Project Combat</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <div id="carregando">Carregando modelos… <span id="progresso">0%</span></div>
+    <div id="carregando">Carregando…</div>
+
+    <!-- Seleção de personagem: é a primeira tela; só depois de escolher entra na arena -->
+    <section id="tela-selecao" class="tela oculto">
+      <header>
+        <h1 class="logo">PROJECT <span>COMBAT</span></h1>
+        <div class="info-servidor">
+          <p id="status-conexao">Conectando ao servidor…</p>
+          <p id="online"></p>
+        </div>
+      </header>
+      <aside id="detalhes"></aside>
+      <div id="entrada">
+        <h2>Escolha seu guerreiro</h2>
+        <label for="nome">Seu nome</label>
+        <input id="nome" maxlength="16" placeholder="Digite seu nome" autocomplete="off" />
+        <button id="btn-lutar" class="botao principal" type="button">Lutar!</button>
+        <p id="enderecos"></p>
+      </div>
+      <div id="cartas"></div>
+    </section>
+
+    <!-- Interface da partida -->
+    <section id="hud" class="oculto">
+      <!-- Topo esquerdo: vida -->
+      <div id="hud-status">
+        <div id="hud-personagem"></div>
+        <div id="hud-barra">
+          <div id="hud-vida"></div>
+          <div id="hud-escudo"></div>
+        </div>
+        <div id="hud-vida-texto"></div>
+        <div id="hud-efeitos"></div>
+      </div>
+
+      <!-- Topo direito: placar -->
+      <div id="placar">
+        <ul id="placar-lista"></ul>
+        <small id="ping"></small>
+      </div>
+
+      <!-- Base: habilidades, ultimate e poção -->
+      <div id="hud-slots"></div>
+      <p id="mira-ult" class="oculto">Clique num inimigo marcado com ☠ · <kbd>F</kbd> ou botão direito cancela</p>
+
+      <div id="derrota" class="oculto"><span id="derrota-texto"></span></div>
+    </section>
 
     <div id="avisos" aria-live="polite"></div>
 
-    <aside id="painel">
-      <h1>Cena 3D</h1>
-      <h2>Membros</h2>
-      <ul id="lista-membros"></ul>
-      <button id="reiniciar-luta" type="button">Reiniciar luta</button>
+    <div id="pausa" class="oculto">
+      <div class="pausa-caixa">
+        <h2>Menu</h2>
+        <button id="btn-continuar" class="botao principal" type="button">Continuar</button>
+        <button id="btn-trocar" class="botao" type="button">Trocar personagem</button>
+        <button id="btn-bot" class="botao" type="button">Adicionar bot</button>
+        <button id="btn-sem-bots" class="botao" type="button">Remover bots</button>
+        <div class="controles">
+          <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ou setas — andar · mouse — mirar</p>
+          <p><kbd>Clique</kbd> (ou <kbd>J</kbd>) — ataque, segure para repetir</p>
+          <p><kbd>Q</kbd> <kbd>E</kbd> — habilidades · <kbd>Espaço</kbd> — esquiva</p>
+          <p><kbd>F</kbd> — ultimate · <kbd>R</kbd> — poção</p>
+          <p>Roda do mouse — zoom</p>
+        </div>
+      </div>
+    </div>
 
-      <h2>Selecionado <small id="nome-selecionado"></small></h2>
-      <label class="linha">
-        Modelo
-        <select id="seletor-modelo"></select>
-      </label>
-      <p id="teclas-selecionado" class="ajuda"></p>
-
-      <h2>Animações</h2>
-      <div id="lista-animacoes"></div>
-
-      <label class="linha">
-        Velocidade da animação
-        <input id="velocidade-anim" type="range" min="0" max="2" step="0.1" value="1" />
-      </label>
-
-      <p class="ajuda">
-        Clique num personagem para selecionar.<br />
-        <kbd>1</kbd>–<kbd>9</kbd> tocam as animações do selecionado.<br />
-        O ataque acerta quem estiver na frente e perto; quem perde toda a vida
-        renasce em 4 s.<br />
-        Arraste para girar a câmera, roda do mouse para zoom.
-      </p>
-      <p id="erros"></p>
-    </aside>
+    <div id="reconectando" class="oculto">Conexão perdida. Reconectando…</div>
 
     <script type="module" src="/src/main.js"></script>
   </body>

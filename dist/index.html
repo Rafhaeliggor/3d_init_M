@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Project Combat</title>
+    <script type="module" crossorigin src="/assets/index-DqyTHjIM.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BI1ZJ3oJ.css">
+  </head>
+  <body>
+    <div id="carregando">Carregando…</div>
+
+    <!-- Menu inicial -->
+    <section id="tela-inicial" class="tela oculto">
+      <div class="cartao-inicial">
+        <h1>PROJECT<span>COMBAT</span></h1>
+        <label for="nome">Seu nome</label>
+        <input id="nome" maxlength="16" placeholder="Digite seu nome" autocomplete="off" />
+        <button id="btn-jogar" class="botao principal" type="button">Jogar</button>
+        <p id="status-conexao">Conectando ao servidor…</p>
+        <p id="online"></p>
+        <p id="enderecos"></p>
+      </div>
+    </section>
+
+    <!-- Seletor de personagem -->
+    <section id="tela-selecao" class="tela oculto">
+      <header>
+        <button id="btn-voltar" class="botao" type="button">← Voltar</button>
+        <h2>Escolha seu guerreiro</h2>
+        <button id="btn-lutar" class="botao principal" type="button">Lutar!</button>
+      </header>
+      <aside id="detalhes"></aside>
+      <div id="cartas"></div>
+    </section>
+
+    <!-- Interface da partida -->
+    <section id="hud" class="oculto">
+      <div id="placar">
+        <div class="placar-titulo"><span>Jogador</span><b>Abates</b><em>Mortes</em></div>
+        <ul id="placar-lista"></ul>
+        <small id="ping"></small>
+      </div>
+
+      <div id="hud-base">
+        <div id="hud-efeitos"></div>
+        <div id="hud-vida-caixa">
+          <span id="hud-personagem"></span>
+          <div id="hud-barra">
+            <div id="hud-vida"></div>
+            <div id="hud-escudo"></div>
+            <span id="hud-vida-texto"></span>
+          </div>
+        </div>
+        <div id="hud-slots"></div>
+      </div>
+
+      <p id="dica">WASD anda · mouse mira · <kbd>Esc</kbd> menu</p>
+      <div id="derrota" class="oculto"><span id="derrota-texto"></span></div>
+    </section>
+
+    <div id="avisos" aria-live="polite"></div>
+
+    <div id="pausa" class="oculto">
+      <div class="pausa-caixa">
+        <h2>Menu</h2>
+        <button id="btn-continuar" class="botao principal" type="button">Continuar</button>
+        <button id="btn-trocar" class="botao" type="button">Trocar personagem</button>
+        <button id="btn-bot" class="botao" type="button">Adicionar bot</button>
+        <button id="btn-sem-bots" class="botao" type="button">Remover bots</button>
+        <button id="btn-sair" class="botao" type="button">Sair para o menu</button>
+        <div class="controles">
+          <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ou setas — andar</p>
+          <p><kbd>Clique</kbd> (ou <kbd>J</kbd>) — ataque, segure para repetir</p>
+          <p><kbd>Q</kbd> <kbd>E</kbd> — habilidades · <kbd>Espaço</kbd> — esquiva</p>
+          <p>Roda do mouse — zoom</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="reconectando" class="oculto">Conexão perdida. Reconectando…</div>
+
+  </body>
+</html>
