@@ -1,0 +1,7 @@
+# Large source asset archives (exceed GitHub's 100MB file limit) — kept locally, not in Git
+armas_assets/Modular Character Outfits - Fantasy[Standard].zip
+Universal Base Characters[Standard].zip
+*.zip
+
+# Vite dependency cache / temp build dirs
+node_modules/.vite/

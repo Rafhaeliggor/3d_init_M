@@ -11,7 +11,7 @@ import { PERSONAGENS } from '../shared/personagens.js';
 import { REGRAS } from '../shared/regras.js';
 import { normalizarAngulo } from '../shared/util.js';
 import { criarVisual } from './visual/modelo.js';
-import { areaDeGolpe, areaRetangular, faiscas, textoFlutuante } from './efeitos.js';
+import { areaDeGolpe, areaRetangular, faiscas, sangue, textoFlutuante } from './efeitos.js';
 
 const ATRASO_INTERPOLACAO = 100; // ms
 
@@ -38,6 +38,11 @@ export class Entidade {
     this.buffer = [];
     this.rotAcao = null;
     this.rotAcaoAte = 0;
+    this.golpeadoAte = -9; // instante (s) do último dano, para destacar a barra
+    this.barraOp = local ? 0.95 : 0.3; // opacidade atual da barra de vida
+    this.aliado = false; // companheiro de time (modo times)
+    this.flinch = null; // recuo passageiro ao ser atingido
+    this.raiz.userData.entidade = this; // usado pelo contorno ao passar o mouse
     this.criarRotulo();
     this.vestir(dados.p);
     this.dados = dados;
@@ -102,10 +107,11 @@ export class Entidade {
     el.innerHTML =
       '<span class="rotulo-nome"></span><div class="barra-vida"><div class="vida"></div><div class="escudo"></div></div>';
     this.elNome = el.querySelector('.rotulo-nome');
+    this.elBarra = el.querySelector('.barra-vida');
     this.elVida = el.querySelector('.vida');
     this.elEscudo = el.querySelector('.escudo');
     this.elRotulo = el;
-    if (this.local) el.classList.add('voce');
+    el.classList.add(this.local ? 'voce' : 'inimigo');
     this.rotulo = new CSS2DObject(el);
     this.raiz.add(this.rotulo);
   }
@@ -187,13 +193,47 @@ export class Entidade {
     const vidaMax = this.def.vida;
     const fracao = d.v / vidaMax;
     this.elVida.style.width = `${fracao * 100}%`;
-    this.elVida.style.background = fracao > 0.5 ? '#5ad15a' : fracao > 0.25 ? '#e8c43a' : '#e5484d';
     this.elEscudo.style.width = `${Math.min(1, d.e / vidaMax) * 100}%`;
+    this.elRotulo.classList.toggle('vida-baixa', fracao <= 0.3 && !morto);
+
+    // Cor da barra vem do CSS (azul = você, vermelho = inimigo). A barra
+    // do inimigo fica discreta quando ele não está sob ataque e aparece
+    // por inteiro ao levar dano ou com a vida baixa.
+    const recemAtingido = agora - this.golpeadoAte < 1.6;
+    let alvoOp;
+    if (this.local) alvoOp = 0.95;
+    else if (morto) alvoOp = 0.12;
+    else if (this.aliado) alvoOp = recemAtingido || fracao <= 0.3 ? 1 : 0.6;
+    else alvoOp = recemAtingido || fracao <= 0.3 ? 1 : 0.28;
+    this.barraOp += (alvoOp - this.barraOp) * Math.min(1, dt * 8);
+    this.elBarra.style.opacity = this.barraOp.toFixed(3);
+    // Cor por relação: você = azul, aliado = verde, inimigo = vermelho.
+    if (!this.local) {
+      this.elRotulo.classList.toggle('aliado', this.aliado);
+      this.elRotulo.classList.toggle('inimigo', !this.aliado);
+    }
     this.elRotulo.classList.toggle('morto', morto);
     // Ceifador com a ultimate pronta: mostra ☠ em quem pode ser executado.
-    const executavel = !this.local && !morto && limiteExecucao > 0 && fracao <= limiteExecucao;
+    const executavel = !this.local && !this.aliado && !morto && limiteExecucao > 0 && fracao <= limiteExecucao;
     this.elRotulo.classList.toggle('executavel', executavel);
     this.elRotulo.classList.toggle('marcado', this.marca.visible);
+
+    // Recuo passageiro ao ser atingido: desloca o modelo para a direção
+    // oposta ao golpe e volta (meia-onda de seno). Só mexe no x/z do
+    // visual, sem interferir na posição vinda do servidor.
+    if (this.flinch) {
+      this.flinch.t += dt;
+      const k = this.flinch.t / this.flinch.dur;
+      if (k >= 1) {
+        this.visual.raiz.position.x = 0;
+        this.visual.raiz.position.z = 0;
+        this.flinch = null;
+      } else {
+        const curva = Math.sin(k * Math.PI);
+        this.visual.raiz.position.x = this.flinch.x * curva;
+        this.visual.raiz.position.z = this.flinch.z * curva;
+      }
+    }
   }
 
   acao(slot, rot) {
@@ -213,13 +253,29 @@ export class Entidade {
     }
   }
 
-  atingido(valor, absorvido) {
+  atingido(valor, absorvido, posAtacante) {
     this.visual.atingido();
     const altura = this.def.altura ?? 1.8;
     if (valor > 0) textoFlutuante(this.raiz, altura + 0.6, `-${valor}`, 'dano');
     if (absorvido > 0) textoFlutuante(this.raiz, altura + 0.9, `(${absorvido})`, 'absorvido');
+    this.golpeadoAte = performance.now() / 1000;
+
+    // Direção do recuo: do atacante para a vítima (empurrão aparente).
     const p = this.raiz.position;
-    faiscas(p.x, altura * 0.6, p.z, 0xff5040, 8);
+    let dx = Math.sin(this.raiz.rotation.y);
+    let dz = Math.cos(this.raiz.rotation.y);
+    if (posAtacante) {
+      dx = p.x - posAtacante.x;
+      dz = p.z - posAtacante.z;
+      const n = Math.hypot(dx, dz) || 1;
+      dx /= n;
+      dz /= n;
+    }
+    const amp = Math.min(0.3, 0.12 + valor / 150);
+    this.flinch = { x: dx * amp, z: dz * amp, t: 0, dur: 0.22 };
+
+    faiscas(p.x, altura * 0.6, p.z, 0xff5040, 6);
+    if (valor > 0) sangue(p.x, altura * 0.62, p.z, dx, dz, Math.min(18, 6 + Math.round(valor / 4)));
   }
 
   curado(valor) {
@@ -241,10 +297,17 @@ export class Entidades {
     this.meuId = null;
     this.offset = null; // diferença entre o relógio local e o do servidor
     this.limiteExecucao = 0; // > 0: destaca quem está com vida abaixo disso
+    this.modo = 'ffa'; // 'ffa' | 'times'
+    this.minhaEquipe = 0; // 0 (ffa) | 1 | 2 (times)
   }
 
   get(id) {
     return this.mapa.get(id);
+  }
+
+  // No modo times, companheiros do seu time (que não são você).
+  ehAliado(dados) {
+    return this.modo === 'times' && dados.eq && dados.eq === this.minhaEquipe && dados.id !== this.meuId;
   }
 
   aplicarSnapshot(snap) {
@@ -275,7 +338,10 @@ export class Entidades {
   atualizar(dt, local) {
     const agora = performance.now();
     const tempoRender = agora - (this.offset ?? 0) - ATRASO_INTERPOLACAO;
-    for (const e of this.mapa.values()) e.atualizar(dt, agora / 1000, tempoRender, local, this.limiteExecucao);
+    for (const e of this.mapa.values()) {
+      e.aliado = !e.local && this.ehAliado(e.dados);
+      e.atualizar(dt, agora / 1000, tempoRender, local, this.limiteExecucao);
+    }
   }
 
   limpar() {

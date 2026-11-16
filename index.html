@@ -23,14 +23,78 @@
         <h2>Escolha seu guerreiro</h2>
         <label for="nome">Seu nome</label>
         <input id="nome" maxlength="16" placeholder="Digite seu nome" autocomplete="off" />
-        <button id="btn-lutar" class="botao principal" type="button">Lutar!</button>
+        <button id="btn-lutar" class="botao principal" type="button">Entrar na arena!</button>
+        <button id="btn-voltar-salas" class="botao" type="button">← Voltar às salas</button>
         <p id="enderecos"></p>
       </div>
       <div id="cartas"></div>
     </section>
 
+    <!-- Lista de salas (lobby): aparece depois de escolher o personagem -->
+    <section id="tela-salas" class="tela oculto">
+      <header>
+        <h1 class="logo">SALAS</h1>
+        <div class="info-servidor">
+          <p id="salas-personagem"></p>
+          <p id="status-conexao-2">Conectado</p>
+        </div>
+      </header>
+
+      <div id="salas-lista-painel">
+        <div class="salas-topo">
+          <h2>Salas abertas</h2>
+          <div class="salas-botoes">
+            <button id="btn-atualizar-salas" class="botao" type="button">↻ Atualizar</button>
+          </div>
+        </div>
+        <ul id="salas-lista"></ul>
+        <p id="salas-vazio" class="oculto">Nenhuma sala aberta. Crie a primeira!</p>
+      </div>
+
+      <aside id="salas-criar">
+        <h2>Criar sala</h2>
+        <label>Nome da sala<input id="sala-nome" maxlength="24" placeholder="Minha arena" autocomplete="off" /></label>
+        <label>Modo de jogo
+          <select id="sala-modo">
+            <option value="ffa">Todos contra todos</option>
+            <option value="times">Times (Azul × Vermelho)</option>
+          </select>
+        </label>
+        <label>Objetivo de abates: <b id="sala-objetivo-valor">10</b>
+          <input id="sala-objetivo" type="range" min="3" max="50" step="1" value="10" />
+        </label>
+        <label>Máx. de jogadores: <b id="sala-max-valor">8</b>
+          <input id="sala-max" type="range" min="2" max="12" step="1" value="8" />
+        </label>
+        <label>Tempo limite
+          <select id="sala-tempo">
+            <option value="0">Sem limite</option>
+            <option value="180">3 minutos</option>
+            <option value="300">5 minutos</option>
+            <option value="600">10 minutos</option>
+          </select>
+        </label>
+        <label class="linha"><input id="sala-bots" type="checkbox" checked /> Permitir bots</label>
+        <label>Senha (opcional)<input id="sala-senha" maxlength="24" placeholder="deixe vazio para pública" autocomplete="off" /></label>
+        <button id="btn-criar-sala" class="botao principal" type="button">Criar e entrar</button>
+        <p id="salas-erro" class="oculto"></p>
+      </aside>
+    </section>
+
+    <!-- Fim de partida: vencedor e pódio -->
+    <div id="resultado" class="oculto">
+      <div class="resultado-caixa">
+        <h2 id="resultado-titulo"></h2>
+        <ol id="resultado-podio"></ol>
+        <p id="resultado-contagem"></p>
+      </div>
+    </div>
+
     <!-- Interface da partida -->
     <section id="hud" class="oculto">
+      <!-- Topo centro: objetivo da partida e tempo -->
+      <div id="objetivo" class="oculto"></div>
+
       <!-- Topo esquerdo: vida -->
       <div id="hud-status">
         <div id="hud-personagem"></div>
@@ -61,9 +125,13 @@
       <div class="pausa-caixa">
         <h2>Menu</h2>
         <button id="btn-continuar" class="botao principal" type="button">Continuar</button>
-        <button id="btn-trocar" class="botao" type="button">Trocar personagem</button>
+        <button id="btn-trocar" class="botao" type="button">Sair da sala</button>
         <button id="btn-bot" class="botao" type="button">Adicionar bot</button>
         <button id="btn-sem-bots" class="botao" type="button">Remover bots</button>
+        <div class="audio-opcoes">
+          <button id="btn-som" class="botao" type="button" aria-pressed="true">🔊 Som</button>
+          <button id="btn-musica" class="botao" type="button" aria-pressed="true">🎵 Música</button>
+        </div>
         <div class="controles">
           <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ou setas — andar · mouse — mirar</p>
           <p><kbd>Clique</kbd> (ou <kbd>J</kbd>) — ataque, segure para repetir</p>

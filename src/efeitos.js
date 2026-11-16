@@ -9,6 +9,7 @@ const ativos = [];
 const projeteis = new Map();
 const geoArcos = new Map();
 const geoFaisca = new THREE.BoxGeometry(0.07, 0.07, 0.07);
+const geoGota = new THREE.SphereGeometry(0.05, 6, 5);
 
 export function iniciarEfeitos(scene) {
   cena = scene;
@@ -140,6 +141,45 @@ export function faiscas(x, y, z, cor = 0xffe0a0, quantidade = 10) {
       m.position.addScaledVector(velocidades[i], dt);
     });
     material.opacity = 1 - k;
+  });
+  grupo.userData.descartar = () => material.dispose();
+}
+
+// Respingo de sangue ao ser atingido: gotas vermelhas lançadas na
+// direção do golpe (dx,dz), com gravidade; as que chegam ao chão param.
+export function sangue(x, y, z, dx = 0, dz = 0, quantidade = 10) {
+  const material = new THREE.MeshBasicMaterial({ color: 0xb10d1e, transparent: true });
+  const grupo = new THREE.Group();
+  grupo.position.set(x, y, z);
+  const velocidades = [];
+  for (let i = 0; i < quantidade; i++) {
+    const m = new THREE.Mesh(geoGota, material);
+    m.scale.setScalar(0.5 + Math.random());
+    grupo.add(m);
+    const impulso = 2 + Math.random() * 3.5;
+    velocidades.push(
+      new THREE.Vector3(
+        dx * impulso + (Math.random() - 0.5) * 3,
+        Math.random() * 3 + 1.5,
+        dz * impulso + (Math.random() - 0.5) * 3,
+      ),
+    );
+  }
+  let ultimo = 0;
+  adicionar(grupo, 0.6, (k) => {
+    const dt = (k - ultimo) * 0.6;
+    ultimo = k;
+    grupo.children.forEach((m, i) => {
+      const v = velocidades[i];
+      v.y -= 22 * dt;
+      m.position.addScaledVector(v, dt);
+      // Pousou no chão (y do grupo está ~na altura do tronco): achata e para.
+      if (m.position.y < -y + 0.02) {
+        m.position.y = -y + 0.02;
+        v.set(0, 0, 0);
+      }
+    });
+    material.opacity = 1 - k * k;
   });
   grupo.userData.descartar = () => material.dispose();
 }

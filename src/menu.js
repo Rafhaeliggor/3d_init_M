@@ -121,9 +121,10 @@ class Vitrine {
 // Tela de seleção (a primeira tela do jogo)
 // ---------------------------------------------------------------------
 export class Menu {
-  constructor({ aoEscolher }) {
+  constructor({ aoEscolher, aoVoltar }) {
     this.vitrine = new Vitrine();
     this.aoEscolher = aoEscolher;
+    this.aoVoltar = aoVoltar;
     this.escolhido = null;
     this.elSelecao = $('tela-selecao');
     this.elNome = $('nome');
@@ -140,6 +141,7 @@ export class Menu {
     } catch {}
 
     $('btn-lutar').addEventListener('click', () => this.confirmar());
+    $('btn-voltar-salas')?.addEventListener('click', () => this.aoVoltar?.());
 
     for (const chave of CHAVES) {
       const def = PERSONAGENS[chave];

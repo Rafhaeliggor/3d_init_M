@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { Jogo } from './jogo.js';
+import { Servidor } from './jogo.js';
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DEV = process.argv.includes('--dev');
@@ -55,10 +55,10 @@ if (DEV) {
 }
 
 const enderecos = enderecosNaRede();
-const jogo = new Jogo({ enderecos: enderecos.filter((e) => !e.virtual).map((e) => e.url) });
+const lobby = new Servidor({ enderecos: enderecos.filter((e) => !e.virtual).map((e) => e.url) });
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
-wss.on('connection', (ws) => jogo.conectar(ws));
+wss.on('connection', (ws) => lobby.conectar(ws));
 
 servidor.on('upgrade', (req, socket, head) => {
   const { pathname } = new URL(req.url, 'http://localhost');

@@ -3,7 +3,7 @@
 //   topo direito  – placar
 //   base          – habilidades, ultimate (F) e poção (R), só ícones
 import { PERSONAGENS, SLOTS } from '../shared/personagens.js';
-import { REGRAS } from '../shared/regras.js';
+import { REGRAS, SALA } from '../shared/regras.js';
 import { habilidadeDe } from './entidades.js';
 
 const TECLA_SLOT = { ataque: 'Clique', hab1: 'Q', hab2: 'E', esquiva: 'Espaço', ult: 'F', pocao: 'R' };
@@ -75,8 +75,58 @@ export class Hud {
     this.elDerrota = $('derrota');
     this.elDerrotaTexto = $('derrota-texto');
     this.elPing = $('ping');
+    this.elObjetivo = $('objetivo');
     this.slots = {};
     this.ultimoPlacar = 0;
+    this.liderId = null; // quem está em 1º no placar
+    this.liderKills = 0; // abates do líder quando anunciado
+    this.aoNovoLider = null; // callback(souEu) para som/efeito ao trocar o líder
+    this.cfg = null; // config da partida atual
+    this.minhaEquipe = 0;
+    this.objetivoHtml = '';
+  }
+
+  // Chamado ao entrar na sala: guarda a config e mostra a barra de objetivo.
+  configurarPartida(config, minhaEquipe) {
+    this.cfg = config;
+    this.minhaEquipe = minhaEquipe ?? 0;
+    this.liderId = null;
+    this.liderKills = 0;
+    this.objetivoHtml = '';
+    this.elObjetivo.classList.remove('oculto');
+  }
+
+  // Barra superior: progresso do objetivo e tempo restante.
+  partida(snap, meuId) {
+    if (!this.cfg) return;
+    const js = snap.j;
+    let html;
+    if (this.cfg.modo === 'times') {
+      const soma = { 1: 0, 2: 0 };
+      for (const j of js) soma[j.eq] = (soma[j.eq] ?? 0) + j.k;
+      const a = SALA.equipes[1];
+      const b = SALA.equipes[2];
+      html = `<div class="obj-times">
+        <span class="eq${this.minhaEquipe === 1 ? ' meu' : ''}" style="color:${a.cor}">${soma[1]}</span>
+        <span class="obj-meta">— meta ${this.cfg.objetivo} —</span>
+        <span class="eq${this.minhaEquipe === 2 ? ' meu' : ''}" style="color:${b.cor}">${soma[2]}</span>
+      </div>`;
+    } else {
+      let lider = 0;
+      let meu = 0;
+      for (const j of js) {
+        if (j.k > lider) lider = j.k;
+        if (j.id === meuId) meu = j.k;
+      }
+      html = `<div class="obj-ffa"><span>Líder <b>${lider}</b>/${this.cfg.objetivo}</span><span>Você <b>${meu}</b></span></div>`;
+    }
+    if (snap.tr >= 0) {
+      const s = Math.ceil(snap.tr);
+      const mm = Math.floor(s / 60);
+      const ss = String(s % 60).padStart(2, '0');
+      html += `<div class="obj-tempo${s <= 30 ? ' urgente' : ''}">⏱ ${mm}:${ss}</div>`;
+    }
+    if (html !== this.objetivoHtml) this.elObjetivo.innerHTML = this.objetivoHtml = html;
   }
 
   mostrar(visivel) {
@@ -177,10 +227,29 @@ export class Hud {
   }
 
   placar(jogadores, meuId) {
+    const ordenados = [...jogadores].sort((a, b) => b.k - a.k || a.d - b.d);
+
+    // Ultrapassagem do 1º lugar: avisa quando o líder muda por ter mais
+    // abates que o líder anterior (evita alarde em empates/tira-teima).
+    const lider = ordenados[0];
+    if (lider) {
+      if (lider.k === 0) {
+        // Placar zerado (partida recomeçou): reinicia a detecção.
+        this.liderId = null;
+        this.liderKills = 0;
+      } else {
+        if (this.liderId !== null && lider.id !== this.liderId && lider.k > this.liderKills) {
+          this.aviso(`👑 ${escapar(lider.n)} assumiu a liderança!`, 'lider');
+          this.aoNovoLider?.(lider.id === meuId);
+        }
+        this.liderId = lider.id;
+        this.liderKills = lider.k;
+      }
+    }
+
     const t = performance.now();
     if (t - this.ultimoPlacar < 250) return;
     this.ultimoPlacar = t;
-    const ordenados = [...jogadores].sort((a, b) => b.k - a.k || a.d - b.d);
     const html = ordenados
       .map((j) => {
         const def = PERSONAGENS[j.p];

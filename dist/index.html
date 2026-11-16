@@ -3,59 +3,120 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Project Combat</title>
-    <script type="module" crossorigin src="/assets/index-DqyTHjIM.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-BI1ZJ3oJ.css">
+    <title>Project Combat</title>
+    <script type="module" crossorigin src="/assets/index-BjTP6Z4A.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-VIGzeDk3.css">
   </head>
   <body>
     <div id="carregando">Carregando…</div>
 
-    <!-- Menu inicial -->
-    <section id="tela-inicial" class="tela oculto">
-      <div class="cartao-inicial">
-        <h1>PROJECT<span>COMBAT</span></h1>
-        <label for="nome">Seu nome</label>
-        <input id="nome" maxlength="16" placeholder="Digite seu nome" autocomplete="off" />
-        <button id="btn-jogar" class="botao principal" type="button">Jogar</button>
-        <p id="status-conexao">Conectando ao servidor…</p>
-        <p id="online"></p>
-        <p id="enderecos"></p>
-      </div>
-    </section>
-
-    <!-- Seletor de personagem -->
+    <!-- Seleção de personagem: é a primeira tela; só depois de escolher entra na arena -->
     <section id="tela-selecao" class="tela oculto">
       <header>
-        <button id="btn-voltar" class="botao" type="button">← Voltar</button>
-        <h2>Escolha seu guerreiro</h2>
-        <button id="btn-lutar" class="botao principal" type="button">Lutar!</button>
+        <h1 class="logo">PROJECT <span>COMBAT</span></h1>
+        <div class="info-servidor">
+          <p id="status-conexao">Conectando ao servidor…</p>
+          <p id="online"></p>
+        </div>
       </header>
       <aside id="detalhes"></aside>
+      <div id="entrada">
+        <h2>Escolha seu guerreiro</h2>
+        <label for="nome">Seu nome</label>
+        <input id="nome" maxlength="16" placeholder="Digite seu nome" autocomplete="off" />
+        <button id="btn-lutar" class="botao principal" type="button">Entrar na arena!</button>
+        <button id="btn-voltar-salas" class="botao" type="button">← Voltar às salas</button>
+        <p id="enderecos"></p>
+      </div>
       <div id="cartas"></div>
     </section>
 
+    <!-- Lista de salas (lobby): aparece depois de escolher o personagem -->
+    <section id="tela-salas" class="tela oculto">
+      <header>
+        <h1 class="logo">SALAS</h1>
+        <div class="info-servidor">
+          <p id="salas-personagem"></p>
+          <p id="status-conexao-2">Conectado</p>
+        </div>
+      </header>
+
+      <div id="salas-lista-painel">
+        <div class="salas-topo">
+          <h2>Salas abertas</h2>
+          <div class="salas-botoes">
+            <button id="btn-atualizar-salas" class="botao" type="button">↻ Atualizar</button>
+          </div>
+        </div>
+        <ul id="salas-lista"></ul>
+        <p id="salas-vazio" class="oculto">Nenhuma sala aberta. Crie a primeira!</p>
+      </div>
+
+      <aside id="salas-criar">
+        <h2>Criar sala</h2>
+        <label>Nome da sala<input id="sala-nome" maxlength="24" placeholder="Minha arena" autocomplete="off" /></label>
+        <label>Modo de jogo
+          <select id="sala-modo">
+            <option value="ffa">Todos contra todos</option>
+            <option value="times">Times (Azul × Vermelho)</option>
+          </select>
+        </label>
+        <label>Objetivo de abates: <b id="sala-objetivo-valor">10</b>
+          <input id="sala-objetivo" type="range" min="3" max="50" step="1" value="10" />
+        </label>
+        <label>Máx. de jogadores: <b id="sala-max-valor">8</b>
+          <input id="sala-max" type="range" min="2" max="12" step="1" value="8" />
+        </label>
+        <label>Tempo limite
+          <select id="sala-tempo">
+            <option value="0">Sem limite</option>
+            <option value="180">3 minutos</option>
+            <option value="300">5 minutos</option>
+            <option value="600">10 minutos</option>
+          </select>
+        </label>
+        <label class="linha"><input id="sala-bots" type="checkbox" checked /> Permitir bots</label>
+        <label>Senha (opcional)<input id="sala-senha" maxlength="24" placeholder="deixe vazio para pública" autocomplete="off" /></label>
+        <button id="btn-criar-sala" class="botao principal" type="button">Criar e entrar</button>
+        <p id="salas-erro" class="oculto"></p>
+      </aside>
+    </section>
+
+    <!-- Fim de partida: vencedor e pódio -->
+    <div id="resultado" class="oculto">
+      <div class="resultado-caixa">
+        <h2 id="resultado-titulo"></h2>
+        <ol id="resultado-podio"></ol>
+        <p id="resultado-contagem"></p>
+      </div>
+    </div>
+
     <!-- Interface da partida -->
     <section id="hud" class="oculto">
+      <!-- Topo centro: objetivo da partida e tempo -->
+      <div id="objetivo" class="oculto"></div>
+
+      <!-- Topo esquerdo: vida -->
+      <div id="hud-status">
+        <div id="hud-personagem"></div>
+        <div id="hud-barra">
+          <div id="hud-vida"></div>
+          <div id="hud-escudo"></div>
+        </div>
+        <div id="hud-vida-texto"></div>
+        <div id="hud-efeitos"></div>
+      </div>
+
+      <!-- Topo direito: placar -->
       <div id="placar">
-        <div class="placar-titulo"><span>Jogador</span><b>Abates</b><em>Mortes</em></div>
         <ul id="placar-lista"></ul>
         <small id="ping"></small>
       </div>
 
-      <div id="hud-base">
-        <div id="hud-efeitos"></div>
-        <div id="hud-vida-caixa">
-          <span id="hud-personagem"></span>
-          <div id="hud-barra">
-            <div id="hud-vida"></div>
-            <div id="hud-escudo"></div>
-            <span id="hud-vida-texto"></span>
-          </div>
-        </div>
-        <div id="hud-slots"></div>
-      </div>
+      <!-- Base: habilidades, ultimate e poção -->
+      <div id="hud-slots"></div>
+      <p id="mira-ult" class="oculto">Clique num inimigo marcado com ☠ · <kbd>F</kbd> ou botão direito cancela</p>
 
-      <p id="dica">WASD anda · mouse mira · <kbd>Esc</kbd> menu</p>
       <div id="derrota" class="oculto"><span id="derrota-texto"></span></div>
     </section>
 
@@ -65,20 +126,24 @@
       <div class="pausa-caixa">
         <h2>Menu</h2>
         <button id="btn-continuar" class="botao principal" type="button">Continuar</button>
-        <button id="btn-trocar" class="botao" type="button">Trocar personagem</button>
+        <button id="btn-trocar" class="botao" type="button">Sair da sala</button>
         <button id="btn-bot" class="botao" type="button">Adicionar bot</button>
         <button id="btn-sem-bots" class="botao" type="button">Remover bots</button>
-        <button id="btn-sair" class="botao" type="button">Sair para o menu</button>
+        <div class="audio-opcoes">
+          <button id="btn-som" class="botao" type="button" aria-pressed="true">🔊 Som</button>
+          <button id="btn-musica" class="botao" type="button" aria-pressed="true">🎵 Música</button>
+        </div>
         <div class="controles">
-          <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ou setas — andar</p>
+          <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ou setas — andar · mouse — mirar</p>
           <p><kbd>Clique</kbd> (ou <kbd>J</kbd>) — ataque, segure para repetir</p>
           <p><kbd>Q</kbd> <kbd>E</kbd> — habilidades · <kbd>Espaço</kbd> — esquiva</p>
+          <p><kbd>F</kbd> — ultimate · <kbd>R</kbd> — poção</p>
           <p>Roda do mouse — zoom</p>
         </div>
       </div>
     </div>
 
     <div id="reconectando" class="oculto">Conexão perdida. Reconectando…</div>
-
+
   </body>
 </html>

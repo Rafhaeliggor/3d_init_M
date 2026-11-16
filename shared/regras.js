@@ -42,6 +42,29 @@ export const REGRAS = {
   },
 };
 
+// Salas: configuração de uma partida. Os limites valem no servidor e na
+// tela de criação de sala.
+export const SALA = {
+  modos: {
+    ffa: { nome: 'Todos contra todos', times: false },
+    times: { nome: 'Times (Azul × Vermelho)', times: true },
+  },
+  padrao: {
+    modo: 'ffa',
+    objetivo: 10, // abates para vencer
+    maxJogadores: 8,
+    tempoLimite: 0, // segundos (0 = sem limite)
+    permitirBots: true,
+  },
+  objetivoMin: 3,
+  objetivoMax: 50,
+  jogadoresMin: 2,
+  jogadoresMax: 12,
+  temposLimite: [0, 180, 300, 600], // opções em segundos (0 = sem limite)
+  duracaoResultado: 8, // segundos na tela de resultado antes de recomeçar
+  equipes: { 1: { nome: 'Time Azul', cor: '#3f8bff' }, 2: { nome: 'Time Vermelho', cor: '#ff4d4d' } },
+};
+
 // Efeitos aplicados por golpes (atordoar / lentidao nas habilidades).
 export const EFEITO_ATORDOADO = { nome: 'Atordoado', atordoado: true, cor: '#ffe14d' };
 export const EFEITO_LENTO = { nome: 'Lento', cor: '#6ab0ff' };

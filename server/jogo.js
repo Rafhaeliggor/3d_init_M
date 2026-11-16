@@ -1,158 +1,172 @@
 // =====================================================================
-//  PARTIDA (roda no servidor)
-//  O servidor é quem decide o combate: valida recargas, resolve golpes,
-//  projéteis, dano, mortes e renascimentos, e controla os bots.
-//  Cada jogador move o próprio personagem no navegador e manda a posição
-//  ~20x por segundo; o servidor repassa o estado de todos na mesma taxa.
+//  SERVIDOR DE PARTIDAS
+//  `Servidor` é o lobby: aceita conexões, mantém a lista de salas e
+//  encaminha as mensagens. Cada `Sala` roda uma partida independente
+//  (combate, bots, objetivo, tempo e recomeço), falando só com os seus
+//  jogadores. Um único laço no `Servidor` avança todas as salas.
 // =====================================================================
 import { PERSONAGENS } from '../shared/personagens.js';
-import { REGRAS, EFEITO_ATORDOADO, EFEITO_LENTO, EFEITO_MARCADO, DECAIMENTO_EMPURRAO } from '../shared/regras.js';
+import {
+  REGRAS,
+  SALA,
+  EFEITO_ATORDOADO,
+  EFEITO_LENTO,
+  EFEITO_MARCADO,
+  DECAIMENTO_EMPURRAO,
+} from '../shared/regras.js';
 import { dentroDoGolpe, dentroDoRetangulo, distanciaAoSegmento, frenteDe, limitarAoCirculo } from '../shared/util.js';
 
-// Folga (s) ao conferir recargas: o relógio do navegador e o do servidor
-// nunca batem exatamente, e o jogador não deve perder um golpe por isso.
-const TOLERANCIA = 0.12;
+const TOLERANCIA = 0.12; // folga (s) ao conferir recargas (relógios diferentes)
 const MAX_BOTS = 6;
 const NOMES_BOTS = ['Bot Alfa', 'Bot Bravo', 'Bot Charlie', 'Bot Delta', 'Bot Eco', 'Bot Foxtrot'];
 
 const agora = () => performance.now() / 1000;
 const arred = (v, casas = 2) => Math.round(v * 10 ** casas) / 10 ** casas;
+const limitar = (v, min, max) => Math.max(min, Math.min(max, v));
 
-export class Jogo {
-  constructor({ enderecos = [] } = {}) {
-    this.enderecos = enderecos;
+function enviarMsg(j, obj) {
+  if (j.ws && j.ws.readyState === 1) j.ws.send(JSON.stringify(obj));
+}
+
+// Campos de um jogador/bot. `id` e `ws` vêm de fora.
+function jogadorBase(extra) {
+  return {
+    id: 0,
+    ws: null,
+    bot: false,
+    nome: '',
+    personagem: null,
+    def: null,
+    sala: null,
+    equipe: 0, // 0 = sem time (ffa); 1 ou 2 nos times
+    emJogo: false,
+    x: 0,
+    z: 0,
+    rot: 0,
+    mov: false,
+    vida: 0,
+    escudo: 0,
+    morto: false,
+    renasceEm: 0,
+    invulneravelAte: 0,
+    ocupadoAte: 0,
+    recargas: { ataque: 0, hab1: 0, hab2: 0, esquiva: 0 },
+    efeitos: [],
+    investida: null,
+    abates: 0,
+    mortes: 0,
+    ult: 0,
+    pocao: 0,
+    kbx: 0,
+    kbz: 0,
+    dash: null,
+    proximaDecisao: 0,
+    ...extra,
+  };
+}
+
+// =====================================================================
+//  SALA — uma partida
+// =====================================================================
+export class Sala {
+  constructor(servidor, id, config, dono) {
+    this.servidor = servidor;
+    this.id = id;
+    this.config = config;
+    this.senha = config.senha ?? '';
+    this.donoId = dono; // quem criou (informativo)
     this.jogadores = new Map();
-    this.pendentes = []; // golpes/projéteis aguardando o tempo de preparo
+    this.pendentes = [];
     this.projeteis = [];
-    this.proximoId = 1;
     this.ultimoTick = agora();
-    this.intervalo = setInterval(() => this.tick(), 1000 / REGRAS.taxaServidor);
+    this.estado = 'jogando'; // 'jogando' | 'resultado'
+    this.partidaEm = agora();
+    this.fimEm = 0;
+    this.vencedor = null;
   }
 
-  // ---------------------------------------------------------------
-  // Conexões
-  // ---------------------------------------------------------------
-  conectar(ws) {
-    const j = this.novoJogador({ ws });
-    ws.on('message', (dados) => {
-      let msg;
-      try {
-        msg = JSON.parse(dados);
-      } catch {
-        return;
-      }
-      if (msg && typeof msg.t === 'string') this.mensagem(j, msg);
-    });
-    ws.on('close', () => this.desconectar(j));
-    ws.on('error', () => {});
-    this.enviar(j, { t: 'ola', id: j.id, enderecos: this.enderecos });
-    return j;
+  temModoTimes() {
+    return this.config.modo === 'times';
   }
 
-  novoJogador(extra) {
-    const j = {
-      id: this.proximoId++,
-      ws: null,
-      bot: false,
-      nome: '',
-      personagem: null,
-      def: null,
-      emJogo: false,
-      x: 0,
-      z: 0,
-      rot: 0,
-      mov: false,
-      vida: 0,
-      escudo: 0,
-      morto: false,
-      renasceEm: 0,
-      invulneravelAte: 0,
-      ocupadoAte: 0,
-      recargas: { ataque: 0, hab1: 0, hab2: 0, esquiva: 0 },
-      efeitos: [],
-      investida: null,
-      abates: 0,
-      mortes: 0,
-      ult: 0, // carga da ultimate (0–100)
-      pocao: 0, // abates rumo à poção; = REGRAS.pocao.abatesNecessarios quando tem uma
-      // só bots (o servidor move): empurrão e avanço
-      kbx: 0,
-      kbz: 0,
-      dash: null,
-      proximaDecisao: 0,
-      ...extra,
-    };
+  participantes() {
+    return this.jogadores.size;
+  }
+
+  humanos() {
+    return [...this.jogadores.values()].filter((j) => !j.bot);
+  }
+
+  // Entrada/saída -------------------------------------------------
+  // Reserva uma vaga na sala. O jogador ainda está escolhendo personagem:
+  // conta para a lotação, mas não aparece na arena até nascer.
+  reservar(j) {
+    j.sala = this;
+    j.emJogo = false;
+    j.equipe = 0;
+    j.personagem = null;
+    j.def = null;
     this.jogadores.set(j.id, j);
-    return j;
   }
 
-  desconectar(j) {
-    if (!this.jogadores.has(j.id)) return;
-    this.jogadores.delete(j.id);
-    this.pendentes = this.pendentes.filter((p) => p.atacante !== j);
-    this.projeteis = this.projeteis.filter((p) => p.dono !== j);
-    if (j.emJogo) this.aviso(`${j.nome} saiu`);
-    // Sem nenhuma pessoa conectada, os bots não têm por que continuar.
-    if (![...this.jogadores.values()].some((o) => !o.bot)) this.removerBots();
-  }
-
-  mensagem(j, m) {
-    switch (m.t) {
-      case 'entrar':
-        return this.entrar(j, m);
-      case 'sair':
-        if (j.emJogo) this.aviso(`${j.nome} saiu da arena`);
-        j.emJogo = false;
-        this.pendentes = this.pendentes.filter((p) => p.atacante !== j);
-        return;
-      case 'pos':
-        return this.receberPosicao(j, m);
-      case 'acao':
-        return void this.acao(j, String(m.acao), Number(m.r), m.alvo);
-      case 'pocao':
-        return this.usarPocao(j);
-      case 'ping':
-        return this.enviar(j, { t: 'pong', c: m.c });
-      case 'bot':
-        if (m.cmd === 'adicionar') return this.adicionarBot();
-        if (m.cmd === 'remover') return this.removerBots();
-        return;
-    }
-  }
-
-  entrar(j, m) {
-    const chave = String(m.personagem);
-    if (!Object.hasOwn(PERSONAGENS, chave)) return;
-    const nome = String(m.nome ?? '').trim().slice(0, 16) || `Jogador ${j.id}`;
-    const trocou = j.emJogo;
-    j.nome = nome;
-    j.personagem = chave;
-    j.def = PERSONAGENS[chave];
+  // Escolheu o personagem → nasce de fato na arena.
+  spawnar(j, nome, personagem) {
+    if (!Object.hasOwn(PERSONAGENS, personagem)) return;
+    j.sala = this;
+    if (!this.jogadores.has(j.id)) this.jogadores.set(j.id, j);
+    j.nome = String(nome ?? '').trim().slice(0, 16) || `Jogador ${j.id}`;
+    j.personagem = personagem;
+    j.def = PERSONAGENS[personagem];
     j.emJogo = true;
     j.recargas = { ataque: 0, hab1: 0, hab2: 0, esquiva: 0 };
     j.ult = 0;
+    j.abates = 0;
+    j.mortes = 0;
+    if (!j.equipe) this.atribuirEquipe(j);
     this.renascer(j);
-    this.aviso(trocou ? `${nome} agora é ${j.def.nome}` : `${nome} entrou como ${j.def.nome}`);
+    this.aviso(`${j.nome} entrou como ${j.def.nome}`);
+    this.enviar(j, { t: 'nascido', suaEquipe: j.equipe, x: arred(j.x), z: arred(j.z), r: arred(j.rot, 3) });
+    this.servidor.transmitirLobby();
   }
 
-  receberPosicao(j, m) {
-    if (!j.emJogo || j.morto) return;
-    const x = Number(m.x);
-    const z = Number(m.z);
-    const r = Number(m.r);
-    if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(r)) return;
-    j.x = x;
-    j.z = z;
-    limitarAoCirculo(j, REGRAS.raioArena);
-    j.rot = r;
-    j.mov = Boolean(m.m);
+  trocarPersonagem(j, nome, personagem) {
+    if (!Object.hasOwn(PERSONAGENS, personagem)) return;
+    j.nome = String(nome ?? '').trim().slice(0, 16) || j.nome;
+    j.personagem = personagem;
+    j.def = PERSONAGENS[personagem];
+    this.renascer(j);
+    this.aviso(`${j.nome} agora é ${j.def.nome}`);
   }
 
-  // ---------------------------------------------------------------
-  // Envio
-  // ---------------------------------------------------------------
+  removerJogador(j) {
+    if (!this.jogadores.has(j.id)) return;
+    const estava = j.emJogo; // só anuncia quem chegou a nascer
+    this.jogadores.delete(j.id);
+    this.pendentes = this.pendentes.filter((p) => p.atacante !== j);
+    this.projeteis = this.projeteis.filter((p) => p.dono !== j);
+    j.sala = null;
+    j.emJogo = false;
+    if (estava) this.aviso(`${j.nome} saiu`);
+    if (!this.humanos().length) this.removerBots();
+  }
+
+  atribuirEquipe(j) {
+    if (!this.temModoTimes()) {
+      j.equipe = 0;
+      return;
+    }
+    const cont = { 1: 0, 2: 0 };
+    for (const o of this.jogadores.values()) if (o !== j && o.equipe) cont[o.equipe]++;
+    j.equipe = cont[1] <= cont[2] ? 1 : 2;
+  }
+
+  mesmaEquipe(a, b) {
+    return this.temModoTimes() && a.equipe !== 0 && a.equipe === b.equipe;
+  }
+
+  // Envio ---------------------------------------------------------
   enviar(j, obj) {
-    if (j.ws && j.ws.readyState === 1) j.ws.send(JSON.stringify(obj));
+    enviarMsg(j, obj);
   }
 
   transmitir(obj) {
@@ -166,9 +180,40 @@ export class Jogo {
     this.transmitir({ t: 'aviso', texto });
   }
 
-  // ---------------------------------------------------------------
-  // Ações e combate
-  // ---------------------------------------------------------------
+  // Mensagens dentro da partida -----------------------------------
+  mensagem(j, m) {
+    switch (m.t) {
+      case 'entrar':
+        return this.spawnar(j, m.nome, m.personagem);
+      case 'pos':
+        return this.receberPosicao(j, m);
+      case 'acao':
+        return void this.acao(j, String(m.acao), Number(m.r), m.alvo);
+      case 'pocao':
+        return this.usarPocao(j);
+      case 'trocar':
+        return this.trocarPersonagem(j, m.nome, m.personagem);
+      case 'bot':
+        if (m.cmd === 'adicionar') return this.adicionarBot();
+        if (m.cmd === 'remover') return this.removerBots();
+        return;
+    }
+  }
+
+  receberPosicao(j, m) {
+    if (!j.emJogo || j.morto || this.estado !== 'jogando') return;
+    const x = Number(m.x);
+    const z = Number(m.z);
+    const r = Number(m.r);
+    if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(r)) return;
+    j.x = x;
+    j.z = z;
+    limitarAoCirculo(j, REGRAS.raioArena);
+    j.rot = r;
+    j.mov = Boolean(m.m);
+  }
+
+  // Ações e combate -----------------------------------------------
   habilidade(j, slot) {
     if (slot === 'esquiva') return REGRAS.esquiva;
     if (slot === 'ataque' || slot === 'hab1' || slot === 'hab2' || slot === 'ult') return j.def[slot] ?? null;
@@ -191,8 +236,8 @@ export class Jogo {
     return j.efeitos.reduce((m, e) => Math.max(m, e[campo] ?? 0), 0);
   }
 
-  // Devolve true se a ação foi aceita.
   acao(j, slot, rot, alvoId) {
+    if (this.estado !== 'jogando') return false;
     if (!j.emJogo || j.morto || !Number.isFinite(rot)) return false;
     const hab = this.habilidade(j, slot);
     if (!hab) return false;
@@ -202,7 +247,6 @@ export class Jogo {
     if (t < j.ocupadoAte - TOLERANCIA) return false;
     if (ult ? j.ult < 100 : t < j.recargas[slot] - TOLERANCIA) return false;
 
-    // Ultimates com alvo: confere antes de gastar a carga.
     let alvo = null;
     if (hab.tipo === 'execucao') {
       alvo = this.jogadores.get(Number(alvoId));
@@ -241,7 +285,6 @@ export class Jogo {
         if (j.bot) this.iniciarAvanco(j, frente, hab, t);
         break;
       case 'buff':
-        // Imune: já sai do atordoamento/lentidão que estiver sofrendo.
         if (hab.efeito.imune) j.efeitos = j.efeitos.filter((e) => !e.atordoado && e.nome !== EFEITO_LENTO.nome);
         this.aplicarEfeito(j, { nome: hab.nome, ...hab.efeito });
         break;
@@ -259,15 +302,13 @@ export class Jogo {
   }
 
   podeExecutar(j, alvo, hab) {
-    if (!alvo || alvo === j || !this.atingivel(alvo)) return false;
-    // Pequena folga: a tela de quem mira mostra o alvo ~100 ms atrasado.
+    if (!alvo || alvo === j || !this.atingivel(alvo) || this.mesmaEquipe(j, alvo)) return false;
     if (alvo.vida / alvo.def.vida > hab.limiteVida + 0.03) return false;
     return Math.hypot(alvo.x - j.x, alvo.z - j.z) <= hab.alcance + 1.5;
   }
 
-  // Sorteio que favorece quem tem mais abates e mais vida.
   sortearMarca(j) {
-    const candidatos = [...this.jogadores.values()].filter((o) => o !== j && this.atingivel(o));
+    const candidatos = [...this.jogadores.values()].filter((o) => o !== j && this.atingivel(o) && !this.mesmaEquipe(j, o));
     if (!candidatos.length) return null;
     const pesos = candidatos.map((o) => 1 + 2 * o.abates + o.vida / o.def.vida);
     let r = Math.random() * pesos.reduce((s, p) => s + p, 0);
@@ -290,7 +331,7 @@ export class Jogo {
   ganharAbate(j) {
     j.abates++;
     const n = REGRAS.pocao.abatesNecessarios;
-    if (j.pocao >= n) return; // só carrega uma poção
+    if (j.pocao >= n) return;
     j.pocao++;
     if (j.pocao === n) this.enviar(j, { t: 'aviso', texto: 'Poção pronta! Aperte R para usar' });
   }
@@ -315,7 +356,7 @@ export class Jogo {
     const t = agora();
     let acertou = false;
     for (const alvo of this.jogadores.values()) {
-      if (alvo === a || !this.atingivel(alvo)) continue;
+      if (alvo === a || !this.atingivel(alvo) || this.mesmaEquipe(a, alvo)) continue;
       const dentro =
         hab.forma === 'retangulo'
           ? dentroDoRetangulo(a.x, a.z, rot, hab.comprimento, hab.largura, alvo.x, alvo.z, alvo.def.raio)
@@ -334,7 +375,6 @@ export class Jogo {
       this.ferir(alvo, a, hab, dx, dz, dist);
     }
 
-    // Cura por acertar (Tufão, Colheita): uma vez só, mesmo pegando vários.
     if (acertou && hab.curaSeAcertar && this.atingivel(a) && a.vida < a.def.vida) {
       const cura = Math.min(a.def.vida - a.vida, Math.round(a.def.vida * hab.curaSeAcertar));
       a.vida += cura;
@@ -345,7 +385,7 @@ export class Jogo {
   lancarProjetil(a, hab, rot) {
     const f = frenteDe(rot);
     const p = {
-      id: this.proximoId++,
+      id: this.servidor.novoId(),
       dono: a,
       hab,
       x: a.x + f.x * 0.6,
@@ -371,6 +411,7 @@ export class Jogo {
   ferir(alvo, a, hab, dx, dz, dist) {
     const t = agora();
     if (t < alvo.invulneravelAte) return;
+    if (this.mesmaEquipe(a, alvo)) return; // fogo amigo desligado nos times
 
     let valor = hab.dano * this.produto(a, 'multDano') * this.produto(alvo, 'multDanoRecebido');
     valor *= 1 - Math.min(1, this.maximo(alvo, 'reducaoDano'));
@@ -383,7 +424,6 @@ export class Jogo {
     }
     alvo.vida = Math.max(0, alvo.vida - valor);
 
-    // Carga da ultimate: quem bate e quem apanha.
     const total = valor + absorvido;
     if (a !== alvo) a.ult = Math.min(100, a.ult + total * REGRAS.ult.porDanoCausado);
     alvo.ult = Math.min(100, alvo.ult + total * REGRAS.ult.porDanoRecebido);
@@ -398,23 +438,16 @@ export class Jogo {
     this.transmitir({ t: 'dano', alvo: alvo.id, de: a.id, valor, absorvido });
 
     let empurrao = hab.empurrao ?? 0;
-    // Puxão: no máximo até encostar no atacante.
     if (empurrao < 0) empurrao = -Math.min(-empurrao, Math.max(0, dist - a.def.raio - alvo.def.raio - 0.2));
     if (empurrao && !this.temEfeito(alvo, 'imune')) this.empurrar(alvo, dx * empurrao, dz * empurrao);
 
     if (alvo.vida <= 0) return this.morrer(alvo, a);
     if (hab.atordoar) this.aplicarEfeito(alvo, { ...EFEITO_ATORDOADO, duracao: hab.atordoar });
     if (hab.lentidao) {
-      this.aplicarEfeito(alvo, {
-        ...EFEITO_LENTO,
-        multVelocidade: hab.lentidao.mult,
-        duracao: hab.lentidao.duracao,
-      });
+      this.aplicarEfeito(alvo, { ...EFEITO_LENTO, multVelocidade: hab.lentidao.mult, duracao: hab.lentidao.duracao });
     }
   }
 
-  // Deslocamento em metros. Jogadores aplicam no próprio navegador;
-  // bots são movidos aqui.
   empurrar(alvo, mx, mz) {
     const vx = mx * DECAIMENTO_EMPURRAO;
     const vz = mz * DECAIMENTO_EMPURRAO;
@@ -427,7 +460,6 @@ export class Jogo {
   }
 
   morrer(alvo, a) {
-    // Marcado pela Sentença: o abate é de quem marcou, que recupera a vida.
     const marca = alvo.efeitos.find((e) => e.marcadoPor);
     const marcador = marca && this.jogadores.get(marca.marcadoPor);
     if (marcador && marcador !== alvo && marcador.emJogo) {
@@ -449,17 +481,25 @@ export class Jogo {
     if (a !== alvo) this.ganharAbate(a);
     this.pendentes = this.pendentes.filter((p) => p.atacante !== alvo);
     this.transmitir({ t: 'morte', alvo: alvo.id, de: a.id });
+    this.verificarVitoria();
   }
 
-  pontoDeNascimento() {
+  pontoDeNascimento(equipe = 0) {
     const vivos = [...this.jogadores.values()].filter((j) => this.atingivel(j));
     let melhor = null;
     let melhorDist = -1;
     for (let i = 0; i < 12; i++) {
-      const ang = Math.random() * Math.PI * 2;
+      let ang = Math.random() * Math.PI * 2;
+      // Nos times, cada lado nasce na sua metade da arena.
+      if (equipe === 1) ang = Math.PI * 0.5 + (Math.random() - 0.5) * Math.PI * 0.8;
+      else if (equipe === 2) ang = -Math.PI * 0.5 + (Math.random() - 0.5) * Math.PI * 0.8;
       const r = REGRAS.raioArena * 0.65;
       const p = { x: Math.sin(ang) * r, z: Math.cos(ang) * r };
-      const d = vivos.reduce((m, o) => Math.min(m, Math.hypot(o.x - p.x, o.z - p.z)), 999);
+      // Longe dos inimigos, perto o bastante de não cair em cima de aliados.
+      const d = vivos.reduce((m, o) => {
+        const dd = Math.hypot(o.x - p.x, o.z - p.z);
+        return this.temModoTimes() && o.equipe === equipe && equipe !== 0 ? m : Math.min(m, dd);
+      }, 999);
       if (d > melhorDist) {
         melhor = p;
         melhorDist = d;
@@ -469,10 +509,10 @@ export class Jogo {
   }
 
   renascer(j) {
-    const p = this.pontoDeNascimento();
+    const p = this.pontoDeNascimento(j.equipe);
     j.x = p.x;
     j.z = p.z;
-    j.rot = Math.atan2(-p.x, -p.z); // olhando para o centro
+    j.rot = Math.atan2(-p.x, -p.z);
     j.vida = j.def.vida;
     j.escudo = 0;
     j.efeitos = [];
@@ -487,34 +527,35 @@ export class Jogo {
     this.transmitir({ t: 'renascer', id: j.id, x: arred(j.x), z: arred(j.z), r: arred(j.rot, 3) });
   }
 
-  // ---------------------------------------------------------------
-  // Bots
-  // ---------------------------------------------------------------
+  // Bots ----------------------------------------------------------
   adicionarBot() {
+    if (!this.config.permitirBots) return;
     const bots = [...this.jogadores.values()].filter((j) => j.bot);
-    if (bots.length >= MAX_BOTS) return;
+    if (bots.length >= MAX_BOTS || this.participantes() >= this.config.maxJogadores) return;
     const chaves = Object.keys(PERSONAGENS);
     const chave = chaves[Math.floor(Math.random() * chaves.length)];
     const nome = NOMES_BOTS.find((n) => !bots.some((b) => b.nome === n)) ?? 'Bot';
-    const b = this.novoJogador({ bot: true, nome, personagem: chave, def: PERSONAGENS[chave], emJogo: true });
+    const b = jogadorBase({ id: this.servidor.novoId(), bot: true, nome, personagem: chave, def: PERSONAGENS[chave], emJogo: true, sala: this });
+    this.atribuirEquipe(b);
+    this.jogadores.set(b.id, b);
     this.renascer(b);
     this.aviso(`${nome} (${b.def.nome}) entrou`);
+    this.servidor.transmitirLobby();
   }
 
   removerBots() {
     let removidos = 0;
     for (const j of [...this.jogadores.values()]) {
       if (!j.bot) continue;
-      this.desconectarBot(j);
+      this.jogadores.delete(j.id);
+      this.pendentes = this.pendentes.filter((p) => p.atacante !== j);
+      this.projeteis = this.projeteis.filter((p) => p.dono !== j);
       removidos++;
     }
-    if (removidos) this.aviso('Bots removidos');
-  }
-
-  desconectarBot(b) {
-    this.jogadores.delete(b.id);
-    this.pendentes = this.pendentes.filter((p) => p.atacante !== b);
-    this.projeteis = this.projeteis.filter((p) => p.dono !== b);
+    if (removidos) {
+      this.aviso('Bots removidos');
+      this.servidor.transmitirLobby();
+    }
   }
 
   alcancaCom(hab, dist) {
@@ -532,7 +573,6 @@ export class Jogo {
     }
   }
 
-  // Usa a ultimate quando faz sentido. Devolve true se usou.
   botUlt(b, alvo, dist, rot) {
     const hab = b.def.ult;
     switch (hab.tipo) {
@@ -554,7 +594,6 @@ export class Jogo {
   }
 
   pensarBot(b, t, dt) {
-    // Física controlada pelo servidor: avanço e empurrão.
     if (b.dash) {
       if (t < b.dash.ate) {
         b.x += b.dash.vx * dt;
@@ -582,7 +621,7 @@ export class Jogo {
     let alvo = null;
     let dist = Infinity;
     for (const o of this.jogadores.values()) {
-      if (o === b || !this.atingivel(o)) continue;
+      if (o === b || !this.atingivel(o) || this.mesmaEquipe(b, o)) continue;
       const d = Math.hypot(o.x - b.x, o.z - b.z);
       if (d < dist) {
         dist = d;
@@ -596,7 +635,6 @@ export class Jogo {
     const rotAlvo = Math.atan2(dx, dz);
     if (t >= b.ocupadoAte) b.rot = rotAlvo;
 
-    // Decide com um pequeno "tempo de reação", para não ser perfeito.
     if (t >= b.proximaDecisao) {
       b.proximaDecisao = t + 0.25 + Math.random() * 0.35;
       const d = b.def;
@@ -611,7 +649,6 @@ export class Jogo {
       }
     }
 
-    // Anda até ficar no alcance do ataque básico.
     const desejado = b.def.ataque.alcance * 0.7 + alvo.def.raio;
     if (dist > desejado && !b.dash) {
       const lento = t < b.ocupadoAte ? 0.35 : 1;
@@ -621,7 +658,6 @@ export class Jogo {
       b.mov = true;
     }
 
-    // Não atravessa os outros.
     for (const o of this.jogadores.values()) {
       if (o === b || !this.atingivel(o)) continue;
       const ox = b.x - o.x;
@@ -636,13 +672,106 @@ export class Jogo {
     limitarAoCirculo(b, REGRAS.raioArena - b.def.raio);
   }
 
-  // ---------------------------------------------------------------
-  // Laço principal
-  // ---------------------------------------------------------------
+  // Objetivo, tempo e recomeço ------------------------------------
+  pontosPorEquipe() {
+    const soma = { 1: 0, 2: 0 };
+    for (const j of this.jogadores.values()) soma[j.equipe] = (soma[j.equipe] ?? 0) + j.abates;
+    return soma;
+  }
+
+  liderAtual() {
+    let melhor = null;
+    for (const j of this.jogadores.values()) {
+      if (!melhor || j.abates > melhor.abates || (j.abates === melhor.abates && j.mortes < melhor.mortes)) melhor = j;
+    }
+    return melhor;
+  }
+
+  verificarVitoria() {
+    if (this.estado !== 'jogando') return;
+    if (this.temModoTimes()) {
+      const soma = this.pontosPorEquipe();
+      for (const eq of [1, 2]) {
+        if (soma[eq] >= this.config.objetivo) return this.fimPartida({ tipo: 'time', equipe: eq, pontos: soma[eq] });
+      }
+    } else {
+      let venc = null;
+      for (const j of this.jogadores.values()) {
+        if (j.abates >= this.config.objetivo && (!venc || j.abates > venc.abates)) venc = j;
+      }
+      if (venc) return this.fimPartida({ tipo: 'jogador', id: venc.id, nome: venc.nome, equipe: venc.equipe, pontos: venc.abates });
+    }
+  }
+
+  vencedorPorTempo() {
+    if (this.temModoTimes()) {
+      const soma = this.pontosPorEquipe();
+      if (soma[1] === soma[2]) return { tipo: 'empate', pontos: soma[1] };
+      const eq = soma[1] > soma[2] ? 1 : 2;
+      return { tipo: 'time', equipe: eq, pontos: soma[eq] };
+    }
+    const lider = this.liderAtual();
+    return lider
+      ? { tipo: 'jogador', id: lider.id, nome: lider.nome, equipe: lider.equipe, pontos: lider.abates }
+      : { tipo: 'empate', pontos: 0 };
+  }
+
+  placarFinal() {
+    return [...this.jogadores.values()]
+      .map((j) => ({ id: j.id, n: j.nome, p: j.personagem, eq: j.equipe, k: j.abates, d: j.mortes, b: j.bot ? 1 : 0 }))
+      .sort((a, b) => b.k - a.k || a.d - b.d);
+  }
+
+  fimPartida(vencedor) {
+    if (this.estado !== 'jogando') return;
+    this.estado = 'resultado';
+    this.vencedor = vencedor;
+    this.fimEm = agora() + SALA.duracaoResultado;
+    this.pendentes = [];
+    this.projeteis = [];
+    for (const j of this.jogadores.values()) {
+      j.investida = null;
+      j.dash = null;
+    }
+    this.transmitir({
+      t: 'fimPartida',
+      modo: this.config.modo,
+      vencedor,
+      placar: this.placarFinal(),
+      proximaEm: SALA.duracaoResultado,
+    });
+    this.servidor.transmitirLobby();
+  }
+
+  reiniciarPartida() {
+    for (const j of this.jogadores.values()) {
+      j.abates = 0;
+      j.mortes = 0;
+      j.ult = 0;
+      j.pocao = 0;
+      j.efeitos = [];
+      j.escudo = 0;
+      j.recargas = { ataque: 0, hab1: 0, hab2: 0, esquiva: 0 };
+      if (j.emJogo) this.renascer(j);
+    }
+    this.estado = 'jogando';
+    this.vencedor = null;
+    this.partidaEm = agora();
+    this.transmitir({ t: 'novaPartida', objetivo: this.config.objetivo });
+    this.servidor.transmitirLobby();
+  }
+
+  // Laço da sala (chamado pelo Servidor) --------------------------
   tick() {
     const t = agora();
     const dt = Math.min(t - this.ultimoTick, 0.25);
     this.ultimoTick = t;
+
+    if (this.estado === 'resultado') {
+      if (t >= this.fimEm) this.reiniciarPartida();
+      this.transmitir(this.snapshot(t));
+      return;
+    }
 
     for (const j of this.jogadores.values()) {
       if (!j.emJogo) continue;
@@ -667,6 +796,10 @@ export class Jogo {
     this.atualizarInvestidas(t);
     this.atualizarProjeteis(dt);
 
+    if (this.config.tempoLimite > 0 && t - this.partidaEm >= this.config.tempoLimite) {
+      this.fimPartida(this.vencedorPorTempo());
+    }
+
     this.transmitir(this.snapshot(t));
   }
 
@@ -678,9 +811,8 @@ export class Jogo {
         j.investida = null;
         continue;
       }
-      // Testa o trecho percorrido desde o último tick, não só o ponto atual.
       for (const alvo of this.jogadores.values()) {
-        if (alvo === j || !this.atingivel(alvo) || inv.atingidos.has(alvo.id)) continue;
+        if (alvo === j || !this.atingivel(alvo) || inv.atingidos.has(alvo.id) || this.mesmaEquipe(j, alvo)) continue;
         const d = distanciaAoSegmento(inv.ux, inv.uz, j.x, j.z, alvo.x, alvo.z);
         if (d > j.def.raio + alvo.def.raio + 0.35) continue;
         inv.atingidos.add(alvo.id);
@@ -699,7 +831,7 @@ export class Jogo {
       const nz = p.z + p.fz * passo;
       let acertou = null;
       for (const alvo of this.jogadores.values()) {
-        if (alvo === p.dono || !this.atingivel(alvo)) continue;
+        if (alvo === p.dono || !this.atingivel(alvo) || this.mesmaEquipe(p.dono, alvo)) continue;
         if (distanciaAoSegmento(p.x, p.z, nx, nz, alvo.x, alvo.z) <= p.hab.raio + alvo.def.raio) {
           acertou = alvo;
           break;
@@ -725,6 +857,7 @@ export class Jogo {
         id: j.id,
         n: j.nome,
         p: j.personagem,
+        eq: j.equipe,
         x: arred(j.x),
         z: arred(j.z),
         r: arred(j.rot, 3),
@@ -749,10 +882,205 @@ export class Jogo {
         })),
       });
     }
-    return { t: 'snap', tempo: Math.round(t * 1000), j: lista };
+    const tr = this.config.tempoLimite > 0 && this.estado === 'jogando' ? Math.max(0, this.config.tempoLimite - (t - this.partidaEm)) : -1;
+    return { t: 'snap', tempo: Math.round(t * 1000), st: this.estado === 'resultado' ? 1 : 0, tr: arred(tr, 1), j: lista };
+  }
+
+  // Resumo para a lista do lobby.
+  infoLobby() {
+    return {
+      id: this.id,
+      nome: this.config.nome,
+      modo: this.config.modo,
+      objetivo: this.config.objetivo,
+      max: this.config.maxJogadores,
+      jogadores: this.humanos().length,
+      bots: this.jogadores.size - this.humanos().length,
+      temSenha: Boolean(this.senha),
+      emJogo: this.estado === 'jogando',
+      tempoLimite: this.config.tempoLimite,
+      permitirBots: this.config.permitirBots,
+    };
+  }
+}
+
+// =====================================================================
+//  SERVIDOR — lobby e roteamento
+// =====================================================================
+export class Servidor {
+  constructor({ enderecos = [] } = {}) {
+    this.enderecos = enderecos;
+    this.conexoes = new Map(); // id → jogador (humano)
+    this.salas = new Map(); // id → Sala
+    this.proximoId = 1;
+    this.ultimoCodigo = 0;
+    this.intervalo = setInterval(() => this.laco(), 1000 / REGRAS.taxaServidor);
+  }
+
+  novoId() {
+    return this.proximoId++;
+  }
+
+  gerarCodigo() {
+    const letras = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let codigo;
+    do {
+      codigo = Array.from({ length: 4 }, () => letras[Math.floor(Math.random() * letras.length)]).join('');
+    } while (this.salas.has(codigo));
+    return codigo;
+  }
+
+  // Conexões ------------------------------------------------------
+  conectar(ws) {
+    const j = jogadorBase({ id: this.novoId(), ws });
+    this.conexoes.set(j.id, j);
+    ws.on('message', (dados) => {
+      let msg;
+      try {
+        msg = JSON.parse(dados);
+      } catch {
+        return;
+      }
+      if (msg && typeof msg.t === 'string') this.mensagem(j, msg);
+    });
+    ws.on('close', () => this.desconectar(j));
+    ws.on('error', () => {});
+    this.enviar(j, { t: 'ola', id: j.id, enderecos: this.enderecos, salas: this.listaSalas() });
+    return j;
+  }
+
+  desconectar(j) {
+    if (j.sala) j.sala.removerJogador(j);
+    this.conexoes.delete(j.id);
+    this.limparSalasVazias();
+    this.transmitirLobby();
+  }
+
+  mensagem(j, m) {
+    switch (m.t) {
+      case 'ping':
+        return this.enviar(j, { t: 'pong', c: m.c });
+      case 'listarSalas':
+        return this.enviarSalas(j);
+      case 'criarSala':
+        return this.criarSala(j, m);
+      case 'entrarSala':
+        return this.entrarSala(j, m);
+      case 'sair':
+      case 'sairSala':
+        return this.sairSala(j);
+      default:
+        // Mensagens de partida só valem dentro de uma sala.
+        if (j.sala) j.sala.mensagem(j, m);
+    }
+  }
+
+  enviar(j, obj) {
+    enviarMsg(j, obj);
+  }
+
+  // Lobby ---------------------------------------------------------
+  listaSalas() {
+    return [...this.salas.values()].map((s) => s.infoLobby());
+  }
+
+  enviarSalas(j) {
+    this.enviar(j, { t: 'salas', lista: this.listaSalas() });
+  }
+
+  // Manda a lista atualizada para quem está no lobby (sem sala).
+  transmitirLobby() {
+    const msg = JSON.stringify({ t: 'salas', lista: this.listaSalas() });
+    for (const j of this.conexoes.values()) {
+      if (!j.sala && j.ws && j.ws.readyState === 1) j.ws.send(msg);
+    }
+  }
+
+  sanearConfig(bruto = {}) {
+    const p = SALA.padrao;
+    const modo = Object.hasOwn(SALA.modos, bruto.modo) ? bruto.modo : p.modo;
+    const tempos = SALA.temposLimite;
+    const tempoLimite = tempos.includes(Number(bruto.tempoLimite)) ? Number(bruto.tempoLimite) : p.tempoLimite;
+    return {
+      nome: String(bruto.nome ?? '').trim().slice(0, 24) || 'Arena',
+      modo,
+      objetivo: Math.round(limitar(Number(bruto.objetivo) || p.objetivo, SALA.objetivoMin, SALA.objetivoMax)),
+      maxJogadores: Math.round(limitar(Number(bruto.maxJogadores) || p.maxJogadores, SALA.jogadoresMin, SALA.jogadoresMax)),
+      tempoLimite,
+      permitirBots: bruto.permitirBots !== false,
+      senha: String(bruto.senha ?? '').slice(0, 24),
+    };
+  }
+
+  criarSala(j, m) {
+    if (this.salas.size >= 50) return this.enviar(j, { t: 'erroSala', motivo: 'Muitas salas abertas. Tente mais tarde.' });
+    if (j.sala) j.sala.removerJogador(j);
+    const bruto = m.config ?? m;
+    const config = this.sanearConfig({ ...bruto, senha: m.senha ?? bruto.senha });
+    const id = this.gerarCodigo();
+    const sala = new Sala(this, id, config, j.id);
+    this.salas.set(id, sala);
+    sala.reservar(j);
+    this.enviar(j, this.msgSalaEntrou(sala));
+    this.transmitirLobby();
+  }
+
+  entrarSala(j, m) {
+    const sala = this.salas.get(String(m.salaId ?? '').toUpperCase());
+    if (!sala) return this.enviar(j, { t: 'erroSala', motivo: 'Sala não encontrada.' });
+    if (sala.senha && sala.senha !== String(m.senha ?? '')) {
+      return this.enviar(j, { t: 'erroSala', motivo: 'Senha incorreta.' });
+    }
+    if (!sala.jogadores.has(j.id) && sala.participantes() >= sala.config.maxJogadores) {
+      return this.enviar(j, { t: 'erroSala', motivo: 'Sala cheia.' });
+    }
+    if (j.sala && j.sala !== sala) j.sala.removerJogador(j);
+    if (!sala.jogadores.has(j.id)) sala.reservar(j);
+    this.enviar(j, this.msgSalaEntrou(sala));
+    this.transmitirLobby();
+  }
+
+  sairSala(j) {
+    if (!j.sala) return;
+    j.sala.removerJogador(j);
+    this.limparSalasVazias();
+    this.enviar(j, { t: 'saiuSala' });
+    this.enviarSalas(j);
+    this.transmitirLobby();
+  }
+
+  msgSalaEntrou(sala) {
+    return {
+      t: 'salaEntrou',
+      salaId: sala.id,
+      config: {
+        nome: sala.config.nome,
+        modo: sala.config.modo,
+        objetivo: sala.config.objetivo,
+        maxJogadores: sala.config.maxJogadores,
+        tempoLimite: sala.config.tempoLimite,
+        permitirBots: sala.config.permitirBots,
+      },
+    };
+  }
+
+  limparSalasVazias() {
+    for (const [id, sala] of this.salas) {
+      if (!sala.humanos().length) this.salas.delete(id);
+    }
+  }
+
+  // Laço geral: avança todas as salas (que têm gente).
+  laco() {
+    for (const sala of this.salas.values()) {
+      if (sala.jogadores.size) sala.tick();
+    }
   }
 
   encerrar() {
     clearInterval(this.intervalo);
   }
 }
+
+// Compatibilidade: o servidor antigo exportava `Jogo`.
+export { Servidor as Jogo };

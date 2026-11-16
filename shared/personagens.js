@@ -66,7 +66,12 @@ export const PERSONAGENS = {
     raio: 0.4,
     altura: 1.8,
     regeneracao: 1.5,
-    modelo: null,
+    modelo: {
+      arquivo: '/models/personagens/Male_Peasant.gltf', rotacaoY: 0,
+      cabeca: '/models/personagens/Superhero_Male_FullBody.gltf',
+      cabelos: ['/models/personagens/Hair_SimpleParted.gltf', '/models/personagens/Eyebrows_Regular.gltf'],
+      corCabelo: '#3b2a1a',
+    },
     ataque: {
       nome: 'Corte',
       tipo: 'golpe',
@@ -122,7 +127,13 @@ export const PERSONAGENS = {
     altura: 1.85,
     regeneracao: 0,
     rouboVida: 0.5,
-    modelo: null,
+    modelo: {
+      arquivo: '/models/personagens/Female_Ranger.gltf', rotacaoY: 0,
+      cabeca: '/models/personagens/Superhero_Female_FullBody.gltf',
+      capuz: '/models/personagens/Female_Ranger_Head_Hood.gltf',
+      cabelos: ['/models/personagens/Eyebrows_Female.gltf'],
+      corCabelo: '#1a1015',
+    },
     ataque: {
       nome: 'Ceifada',
       tipo: 'golpe',
@@ -186,7 +197,12 @@ export const PERSONAGENS = {
     raio: 0.45,
     altura: 1.9,
     regeneracao: 1.5,
-    modelo: null,
+    modelo: {
+      arquivo: '/models/personagens/Male_Peasant.gltf', rotacaoY: 0,
+      cabeca: '/models/personagens/Superhero_Male_FullBody.gltf',
+      cabelos: ['/models/personagens/Hair_Buzzed.gltf', '/models/personagens/Hair_Beard.gltf', '/models/personagens/Eyebrows_Regular.gltf'],
+      corCabelo: '#8b2500',
+    },
     ataque: {
       nome: 'Machadada',
       tipo: 'golpe',
@@ -245,7 +261,12 @@ export const PERSONAGENS = {
     raio: 0.5,
     altura: 1.95,
     regeneracao: 2,
-    modelo: null,
+    modelo: {
+      arquivo: '/models/personagens/Female_Peasant.gltf', rotacaoY: 0,
+      cabeca: '/models/personagens/Superhero_Female_FullBody.gltf',
+      cabelos: ['/models/personagens/Hair_Buns.gltf', '/models/personagens/Eyebrows_Female.gltf'],
+      corCabelo: '#2a1a0e',
+    },
     ataque: {
       nome: 'Marretada',
       tipo: 'golpe',

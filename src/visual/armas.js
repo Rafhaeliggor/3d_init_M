@@ -1,6 +1,8 @@
-// Malhas placeholder das armas. A origem é a empunhadura (onde a mão
-// segura) e o cabo aponta para +Y.
+// Armas dos personagens. Cada tipo pode ter um modelo 3D (GLB) ou usa
+// a malha placeholder feita com formas simples. A origem é a empunhadura
+// e o cabo aponta para +Y.
 import * as THREE from 'three';
+import { carregarGltf } from './modelo.js';
 
 const metal = new THREE.MeshStandardMaterial({ color: 0xc9d1d9, metalness: 0.8, roughness: 0.3 });
 const madeira = new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.8 });
@@ -26,6 +28,21 @@ function lamina(pontos, espessura) {
   geo.translate(0, 0, -espessura / 2);
   return geo;
 }
+
+const MODELOS_ARMA = {
+  foice: {
+    arquivo: '/models/armas/scythe.glb',
+    alturaAlvo: 1.8,
+    rotacao: [Math.PI / 2, 0, 0],
+    posicao: [0, 0, 0],
+  },
+  martelo: {
+    arquivo: '/models/armas/hummer.glb',
+    alturaAlvo: 1.2,
+    rotacao: [Math.PI / 2, 0, 0],
+    posicao: [0, 0, 0],
+  },
+};
 
 export function criarArma(tipo) {
   const g = new THREE.Group();
@@ -94,4 +111,41 @@ export function criarArma(tipo) {
     }
   }
   return g;
+}
+
+// Carrega o modelo 3D da arma (se existir). Retorna a cena dimensionada
+// para o tamanho alvo, ou null se não há modelo para esse tipo.
+export async function carregarArmaModelo(tipo) {
+  const cfg = MODELOS_ARMA[tipo];
+  if (!cfg) return null;
+
+  try {
+    const gltf = await carregarGltf(cfg.arquivo);
+    const cena = gltf.scene.clone();
+
+    cena.traverse((o) => {
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+      }
+    });
+
+    const caixa = new THREE.Box3().setFromObject(cena);
+    const tamanho = caixa.getSize(new THREE.Vector3());
+    const maior = Math.max(tamanho.x, tamanho.y, tamanho.z);
+    const escala = cfg.alturaAlvo / (maior || 1);
+    cena.scale.setScalar(escala);
+
+    const centro = caixa.getCenter(new THREE.Vector3());
+    cena.position.set(-centro.x * escala, -centro.y * escala, -centro.z * escala);
+
+    const container = new THREE.Group();
+    container.add(cena);
+    container.rotation.set(...cfg.rotacao);
+    container.position.set(...cfg.posicao);
+    return container;
+  } catch (e) {
+    console.warn(`Não carregou modelo da arma ${tipo}:`, e);
+    return null;
+  }
 }
